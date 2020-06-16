@@ -17,13 +17,16 @@
 import { ContainerModule, interfaces } from 'inversify';
 import { ConnectionHandler, JsonRpcConnectionHandler, ILogger } from '@theia/core/lib/common';
 import { FileSystemNode } from './node-filesystem';
-import { FileSystem, FileSystemClient, fileSystemPath, DispatchingFileSystemClient } from '../common';
 import { FileSystemWatcherServer, FileSystemWatcherClient, fileSystemWatcherPath } from '../common/filesystem-watcher-protocol';
 import { FileSystemWatcherServerClient } from './filesystem-watcher-client';
 import { NsfwFileSystemWatcherServer } from './nsfw-watcher/nsfw-filesystem-watcher';
 import { MessagingService } from '@theia/core/lib/node/messaging/messaging-service';
 import { NodeFileUploadService } from './node-file-upload-service';
 import { NsfwOptions } from './nsfw-watcher/nsfw-options';
+import { DiskFileSystemProvider } from './disk-file-system-provider';
+import { remoteFileSystemPath, RemoteFileSystemServer, RemoteFileSystemClient, FileSystemProviderServer } from '../common/remote-file-system-provider';
+import { FileSystemProvider } from '../common/files';
+import { FileSystem, DispatchingFileSystemClient, FileSystemClient, fileSystemPath } from '../common/filesystem';
 
 const SINGLE_THREADED = process.argv.indexOf('--no-cluster') !== -1;
 
@@ -89,4 +92,17 @@ export default new ContainerModule(bind => {
 
     bind(NodeFileUploadService).toSelf().inSingletonScope();
     bind(MessagingService.Contribution).toService(NodeFileUploadService);
+
+    bind(DiskFileSystemProvider).toSelf();
+    bind(FileSystemProvider).toService(DiskFileSystemProvider);
+    bind(FileSystemProviderServer).toSelf();
+    bind(RemoteFileSystemServer).toService(FileSystemProviderServer);
+    bind(ConnectionHandler).toDynamicValue(ctx =>
+        new JsonRpcConnectionHandler<RemoteFileSystemClient>(remoteFileSystemPath, client => {
+            const server = ctx.container.get<RemoteFileSystemServer>(RemoteFileSystemServer);
+            server.setClient(client);
+            client.onDidCloseConnection(() => server.dispose());
+            return server;
+        })
+    ).inSingletonScope();
 });
